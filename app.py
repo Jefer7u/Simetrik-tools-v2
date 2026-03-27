@@ -9,18 +9,60 @@ from typing import Dict, List, Any, Tuple, Optional, Set
 from openpyxl.styles import PatternFill, Font, Border, Side, Alignment
 from openpyxl.worksheet.worksheet import Worksheet
 
+# Configuración inicial de la página
 st.set_page_config(page_title="Simetrik Docs Pro | PeYa", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
-C: Dict[str, str] = {"red": "EA0050", "white": "FFFFFF", "grey": "F5F5F5", "dark": "1C1C1C", "border": "D8D8D8", "blue": "1565C0", "teal": "00695C", "amber": "E65100", "purple": "4A148C", "green": "1B5E20", "slate": "37474F", "rose": "880E4F"}
-RT_LABEL: Dict[str, str] = {"native": "📥 Fuente", "source_union": "🔗 Unión de Fuentes", "source_group": "📊 Agrupación", "reconciliation": "⚖️ Conciliación Estándar", "advanced_reconciliation": "🔬 Conciliación Avanzada", "consolidation": "🗂️ Consolidación", "resource_join": "🔀 Join de Recursos", "cumulative_balance": "📈 Balance Acumulado"}
-RT_COLOR: Dict[str, str] = {"native": C["blue"], "source_union": C["teal"], "source_group": C["amber"], "reconciliation": C["red"], "advanced_reconciliation": C["purple"], "consolidation": C["slate"], "resource_join": C["green"], "cumulative_balance": C["green"]}
-RT_ORDER: Dict[str, int] = {"native": 1, "source_union": 2, "source_group": 3, "reconciliation": 4, "advanced_reconciliation": 5, "consolidation": 6, "resource_join": 7, "cumulative_balance": 8}
+# ══════════════════════════════════════════════════════════════════════════════
+# CONSTANTES
+# ══════════════════════════════════════════════════════════════════════════════
+C: Dict[str, str] = {
+    "red":    "EA0050", "white": "FFFFFF", "grey":  "F5F5F5",
+    "dark":   "1C1C1C", "border":"D8D8D8", "blue":  "1565C0",
+    "teal":   "00695C", "amber": "E65100", "purple":"4A148C",
+    "green":  "1B5E20", "slate": "37474F", "rose":  "880E4F",
+}
 
-def mk_border() -> Border: return Border(left=Side(border_style="thin", color=C["border"]), right=Side(border_style="thin", color=C["border"]), top=Side(border_style="thin", color=C["border"]), bottom=Side(border_style="thin", color=C["border"]))
+RT_LABEL: Dict[str, str] = {
+    "native":                  "📥 Fuente",
+    "source_union":            "🔗 Unión de Fuentes",
+    "source_group":            "📊 Agrupación (Group By)",
+    "reconciliation":          "⚖️ Conciliación Estándar",
+    "advanced_reconciliation": "🔬 Conciliación Avanzada",
+    "consolidation":           "🗂️ Consolidación",
+    "resource_join":           "🔀 Join de Recursos",
+    "cumulative_balance":      "📈 Balance Acumulado",
+}
+
+RT_COLOR: Dict[str, str] = {
+    "native":                  C["blue"],
+    "source_union":            C["teal"],
+    "source_group":            C["amber"],
+    "reconciliation":          C["red"],
+    "advanced_reconciliation": C["purple"],
+    "consolidation":           C["slate"],
+    "resource_join":           C["green"],
+    "cumulative_balance":      C["green"],
+}
+
+RT_ORDER: Dict[str, int] = {
+    "native": 1, "source_union": 2, "source_group": 3,
+    "reconciliation": 4, "advanced_reconciliation": 5,
+    "consolidation": 6, "resource_join": 7, "cumulative_balance": 8,
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HELPERS OPENPYXL
+# ══════════════════════════════════════════════════════════════════════════════
+def mk_border() -> Border:
+    t = Side(border_style="thin", color=C["border"])
+    return Border(left=t, right=t, top=t, bottom=t)
 
 def sc(cell: Any, bg: Optional[str] = None, bold: bool = False, color: str = C["dark"], size: int = 10, ha: str = 'left', va: str = 'top', wrap: bool = True) -> None:
-    cell.border, cell.alignment, cell.font = mk_border(), Alignment(horizontal=ha, vertical=va, wrap_text=wrap), Font(name='Arial', bold=bold, size=size, color=color)
-    if bg: cell.fill = PatternFill(start_color=bg, end_color=bg, fill_type="solid")
+    cell.border = mk_border()
+    cell.alignment = Alignment(horizontal=ha, vertical=va, wrap_text=wrap)
+    cell.font = Font(name='Arial', bold=bold, size=size, color=color)
+    if bg:
+        cell.fill = PatternFill(start_color=bg, end_color=bg, fill_type="solid")
 
 def hdr(cell: Any, text: str, bg: str = C["dark"]) -> None:
     cell.value = text
@@ -40,28 +82,62 @@ def meta_row(ws: Worksheet, row: int, label: str, value: Any, cols: int = 5, bg_
     ws.row_dimensions[row].height = 14
     return row + 1
 
-def row_height(n_lines: int, base: int = 13) -> int: return max(14, n_lines * base)
+def row_height(n_lines: int, base: int = 13) -> int:
+    return max(14, n_lines * base)
 
+# ══════════════════════════════════════════════════════════════════════════════
+# PARSERS DE NEGOCIO SIMETRIK (Completos)
+# ══════════════════════════════════════════════════════════════════════════════
 def build_maps(data: Dict[str, Any]) -> Tuple[Dict[int, str], Dict[int, str], Dict[int, Any], Dict[int, str]]:
     res_map, col_map, seg_map, meta_map = {}, {}, {}, {}
+
     for r in data.get('resources', []):
         eid = r.get('export_id')
-        if not eid: continue
         res_map[eid] = r.get('name', str(eid))
+
         for c in (r.get('columns') or []):
-            if c.get('export_id'): col_map[c['export_id']] = c.get('label') or c.get('name') or str(c['export_id'])
+            cid = c.get('export_id')
+            col_map[cid] = c.get('label') or c.get('name') or str(cid)
+
         sg = r.get('source_group') or {}
-        for c in sg.get('columns', []) + sg.get('values', []):
-            if c.get('column_id') and c['column_id'] not in col_map: col_map[c['column_id']] = f"col_{c['column_id']}"
+        for c in sg.get('columns', []):
+            cid = c.get('column_id')
+            if cid and cid not in col_map: col_map[cid] = f"col_{cid}"
+        for v in sg.get('values', []):
+            cid = v.get('column_id')
+            if cid and cid not in col_map: col_map[cid] = f"col_{cid}"
+
         adv = r.get('advanced_reconciliation') or {}
         for rg in adv.get('reconcilable_groups', []):
             for cs in rg.get('columns_selection', []):
-                if cs.get('column_id') and cs['column_id'] not in col_map: col_map[cs['column_id']] = f"col_{cs['column_id']}"
-            for m in (rg.get('segmentation_config') or {}).get('segmentation_metadata', []):
-                if m.get('export_id'): meta_map[m['export_id']] = m.get('value', '?')
+                cid = cs.get('column_id')
+                if cid and cid not in col_map: col_map[cid] = f"col_{cid}"
+            sc2 = rg.get('segmentation_config') or {}
+            for m in sc2.get('segmentation_metadata', []):
+                meta_map[m.get('export_id')] = m.get('value', '?')
+            ccid = sc2.get('criteria_column_id')
+            if ccid and ccid not in col_map: col_map[ccid] = f"col_{ccid}"
+
         for seg in (r.get('segments') or []):
-            if seg.get('export_id'): seg_map[seg['export_id']] = {'name': seg.get('name', ''), 'resource': r.get('name', ''), 'rules': [rule for fset in (seg.get('segment_filter_sets') or []) for rule in (fset.get('segment_filter_rules') or [])]}
+            rules = []
+            for fset in (seg.get('segment_filter_sets') or []):
+                for rule in (fset.get('segment_filter_rules') or []):
+                    rules.append(rule)
+            seg_map[seg.get('export_id')] = {
+                'name':        seg.get('name', ''),
+                'resource':    r.get('name', ''),
+                'resource_id': eid,
+                'rules':       rules,
+            }
+
     return res_map, col_map, seg_map, meta_map
+
+def fmt_filter_rules(rules: List[Dict], col_map: Dict[int, str]) -> str:
+    lines = []
+    for r in rules:
+        col_name = col_map.get(r.get('column_id'), f"ID:{r.get('column_id')}")
+        lines.append(f"{r.get('condition', '')} [{col_name}] {r.get('operator', '')} {r.get('value', '')}".strip())
+    return "\n".join(lines) if lines else "Sin filtros adicionales"
 
 def parse_transformation_logic(col: Dict[str, Any], res_map: Dict[int, str], col_map: Dict[int, str]) -> str:
     lines = []
@@ -90,6 +166,93 @@ def parse_transformation_logic(col: Dict[str, Any], res_map: Dict[int, str], col
                 lines.append(f"   └─ Orden: {', '.join(order_strs)}")
     return "\n".join(lines) if lines else "Dato directo / heredado"
 
+def parse_std_reconciliation(recon: Dict, res_map: Dict, col_map: Dict, seg_map: Dict) -> Optional[Dict]:
+    if not recon: return None
+    sa_id, sb_id = recon.get('segment_a_id'), recon.get('segment_b_id')
+    a_cfg, b_cfg = recon.get('a_source_settings') or {}, recon.get('b_source_settings') or {}
+
+    def resolve_side(cfg, seg_id, prefix):
+        resource_name = res_map.get(cfg.get('resource_id'), '—')
+        seg = seg_map.get(seg_id) or {}
+        return {
+            'prefix':        prefix,
+            'resource_name': resource_name,
+            'group_name':    seg.get('name', f"ID:{seg_id}"),
+            'group_filters': fmt_filter_rules(seg.get('rules', []), col_map),
+            'is_trigger':    cfg.get('is_trigger', False),
+        }
+
+    sides = [resolve_side(a_cfg, sa_id, recon.get('segment_a_prefix', 'A')), resolve_side(b_cfg, sb_id, recon.get('segment_b_prefix', 'B'))]
+    rule_sets = []
+    for rs in sorted(recon.get('reconciliation_rule_sets', []), key=lambda x: x.get('position', 99)):
+        rules_desc = []
+        for rule in (rs.get('reconciliation_rules') or []):
+            col_a, col_b = col_map.get(rule.get('column_a_id'), '?'), col_map.get(rule.get('column_b_id'), '?')
+            tol = rule.get('tolerance', 0)
+            tol_s = f"  [tolerancia ±{tol} {rule.get('tolerance_unit', '')}]" if tol else ""
+            rules_desc.append(f"A.{col_a}  {rule.get('operator', '=')}  B.{col_b}{tol_s}")
+        rule_sets.append({'pos': rs.get('position', 0), 'name': rs.get('name', ''), 'rules': rules_desc})
+
+    return {'sides': sides, 'is_chained': recon.get('is_chained', False), 'rule_sets': rule_sets}
+
+def parse_adv_reconciliation(adv: Dict, res_map: Dict, col_map: Dict, seg_map: Dict, meta_map: Dict) -> Optional[Dict]:
+    if not adv: return None
+    groups = []
+    for rg in (adv.get('reconcilable_groups') or []):
+        seg = seg_map.get(rg.get('segment_id')) or {}
+        sc2 = rg.get('segmentation_config') or {}
+        groups.append({
+            'prefix':        rg.get('prefix_side', '?'),
+            'resource_name': seg.get('resource', res_map.get(rg.get('resource_id'), '—')),
+            'group_name':    seg.get('name', f"ID:{rg.get('segment_id')}"),
+            'group_filters': fmt_filter_rules(seg.get('rules', []), col_map),
+            'segments':      [m.get('value', '') for m in sc2.get('segmentation_metadata', []) if m.get('value')],
+        })
+
+    rule_sets = []
+    for rs in sorted(adv.get('reconciliation_rule_sets', []), key=lambda x: x.get('position', 99)):
+        rules_desc = []
+        for rule in (rs.get('reconciliation_rules') or []):
+            col_a, col_b = col_map.get(rule.get('column_a_id'), '?'), col_map.get(rule.get('column_b_id'), '?')
+            tol = rule.get('tolerance', 0)
+            tol_s = f"  [±{tol} {rule.get('tolerance_unit', '')}]" if tol else ""
+            rules_desc.append(f"A.{col_a}  {rule.get('operator', '=')}  B.{col_b}{tol_s}")
+
+        sweep = []
+        for sw in (rs.get('sweep_sides') or []):
+            isr = sw.get('input_sweep_resource') or {}
+            meta_id = isr.get('segmentation_metadata_id')
+            seg_val = meta_map.get(meta_id, f"ID:{meta_id}") if meta_id else "(sin segmentar)"
+            sweep.append(f"Lado {sw.get('prefix_side', '?')}: {seg_val}")
+
+        rule_sets.append({
+            'pos':        rs.get('position', 0),
+            'name':       rs.get('name', ''),
+            'cross_type': rs.get('cross_type', ''),
+            'new_ver':    rs.get('is_new_version', False),
+            'rules':      rules_desc,
+            'sweep':      sweep,
+        })
+    return {'groups': groups, 'rule_sets': rule_sets}
+
+def parse_segment_filters(segs: List[Dict], col_map: Dict) -> List[Dict]:
+    result = []
+    for seg in (segs or []):
+        rules = []
+        for fset in (seg.get('segment_filter_sets') or []):
+            for r in (fset.get('segment_filter_rules') or []):
+                col_name = col_map.get(r.get('column_id'), f"ID:{r.get('column_id')}")
+                rules.append(f"{r.get('condition','')} [{col_name}] {r.get('operator','')} {r.get('value','')}".strip())
+        if rules:
+            result.append({'name': seg.get('name', ''), 'rules': rules})
+    return result
+
+def parse_source_group(sg: Dict, col_map: Dict) -> Tuple[List[str], List[Tuple[str, str]]]:
+    if not sg: return [], []
+    group_cols = [col_map.get(c.get('column_id'), f"ID:{c.get('column_id')}") for c in sorted(sg.get('columns', []), key=lambda x: x.get('position', 0))]
+    agg_vals   = [(v.get('function', '?'), col_map.get(v.get('column_id'), f"ID:{v.get('column_id')}")) for v in sorted(sg.get('values', []), key=lambda x: x.get('position', 0))]
+    return group_cols, agg_vals
+
 def build_relations(resources: List[Dict], nodes: List[Dict], res_map: Dict) -> Dict[int, Dict[str, List[str]]]:
     all_ids = {r.get('export_id') for r in resources}
     rels = {r.get('export_id'): {"parents": [], "children": []} for r in resources}
@@ -101,6 +264,9 @@ def build_relations(resources: List[Dict], nodes: List[Dict], res_map: Dict) -> 
             if sid in rels: rels[sid]["children"].append(res_map.get(t_id, str(t_id)) + ("" if t_id in all_ids else " ↗"))
     return rels
 
+# ══════════════════════════════════════════════════════════════════════════════
+# GENERADOR EXCEL (Completo)
+# ══════════════════════════════════════════════════════════════════════════════
 def generar_excel(data: Dict, selected_ids: Set[int]) -> io.BytesIO:
     res_map, col_map, seg_map, meta_map = build_maps(data)
     resources = [r for r in data.get('resources', []) if r.get('export_id') in selected_ids]
@@ -112,6 +278,7 @@ def generar_excel(data: Dict, selected_ids: Set[int]) -> io.BytesIO:
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         wb = writer.book
+        # --- ÍNDICE ---
         ws = wb.create_sheet("📚 Índice", 0)
         ws.sheet_view.showGridLines = False
         ws.freeze_panes = "A5"
@@ -143,10 +310,12 @@ def generar_excel(data: Dict, selected_ids: Set[int]) -> io.BytesIO:
         for col_n, w in enumerate([6,11,44,26,36,36,12,8], 1): ws.column_dimensions[chr(64+col_n)].width = w
         ws.auto_filter.ref = f"A4:H{len(resources)+4}"
 
+        # --- DETALLE DE RECURSOS ---
         for res in resources:
             eid, rt = res.get('export_id'), res.get('resource_type', '')
             ws = wb.create_sheet(map_hojas[eid])
             ws.sheet_view.showGridLines = False
+            COLS = 5
             
             ws.merge_cells('A1:E1')
             sc(ws.cell(1, 1, f"{RT_LABEL.get(rt, '')}  ·  {res.get('name', '')}"), bg=RT_COLOR.get(rt, C["dark"]), bold=True, color=C["white"], size=12, ha='left', va='center')
@@ -159,6 +328,108 @@ def generar_excel(data: Dict, selected_ids: Set[int]) -> io.BytesIO:
             ws.freeze_panes = f"A{row+1}"
             row += 1
 
+            # --- CONCILIACIÓN ESTÁNDAR ---
+            std = parse_std_reconciliation(res.get('reconciliation'), res_map, col_map, seg_map)
+            if std:
+                row = section_title(ws, row, "⚖️  REGLAS DE CONCILIACIÓN ESTÁNDAR", bg=C["red"], cols=COLS)
+                row = section_title(ws, row, "  GRUPOS CONCILIABLES ACTIVOS", bg=C["rose"], cols=COLS)
+                for col_n, h in enumerate(["LADO", "RECURSO", "GRUPO CONCILIABLE (ACTIVO)", "FILTROS DEL GRUPO"], 1): hdr(ws.cell(row, col_n, h), h, bg=C["rose"])
+                ws.merge_cells(f'D{row}:E{row}')
+                ws.row_dimensions[row].height = 18
+                row += 1
+                for i, side in enumerate(std['sides']):
+                    bg = C["grey"] if i % 2 == 0 else "FFFFFF"
+                    c1, c2, c3 = ws.cell(row, 1, side['prefix'] + (" [TRIGGER]" if side['is_trigger'] else "")), ws.cell(row, 2, side['resource_name']), ws.cell(row, 3, side['group_name'])
+                    ws.merge_cells(f'D{row}:E{row}')
+                    c4 = ws.cell(row, 4, side['group_filters'])
+                    for c, al in [(c1,'center'),(c2,'left'),(c3,'left'),(c4,'left')]: sc(c, bg=bg, size=9, va='top', wrap=True, ha=al)
+                    ws.row_dimensions[row].height = row_height(side['group_filters'].count('\n') + 1)
+                    row += 1
+                row += 1
+                row = meta_row(ws, row, "Conciliación encadenada", "Sí" if std['is_chained'] else "No", cols=COLS)
+                row += 1
+                row = section_title(ws, row, "  RULE SETS DE MATCHING", bg="C62828", cols=COLS)
+                for col_n, h in enumerate(["POS.", "NOMBRE DEL RULE SET", "REGLAS  (A vs B)"], 1): hdr(ws.cell(row, col_n, h), h, bg="C62828")
+                ws.merge_cells(f'C{row}:E{row}')
+                ws.row_dimensions[row].height = 18
+                row += 1
+                for i, rs in enumerate(std['rule_sets']):
+                    bg = C["grey"] if i % 2 == 0 else "FFFFFF"
+                    c1, c2 = ws.cell(row, 1, rs['pos']), ws.cell(row, 2, rs['name'])
+                    ws.merge_cells(f'C{row}:E{row}')
+                    c3 = ws.cell(row, 3, "\n".join(rs['rules']))
+                    for c, al in [(c1,'center'),(c2,'left'),(c3,'left')]: sc(c, bg=bg, size=9, va='top', wrap=True, ha=al)
+                    ws.row_dimensions[row].height = row_height(len(rs['rules']))
+                    row += 1
+                row += 1
+
+            # --- CONCILIACIÓN AVANZADA ---
+            adv_parsed = parse_adv_reconciliation(res.get('advanced_reconciliation'), res_map, col_map, seg_map, meta_map)
+            if adv_parsed:
+                row = section_title(ws, row, "🔬  REGLAS DE CONCILIACIÓN AVANZADA", bg=C["purple"], cols=COLS)
+                row = section_title(ws, row, "  GRUPOS CONCILIABLES Y SEGMENTOS INTERNOS", bg="6A1B9A", cols=COLS)
+                for col_n, h in enumerate(["LADO", "RECURSO", "GRUPO CONCILIABLE", "FILTROS DEL GRUPO", "SEGMENTOS INTERNOS"], 1): hdr(ws.cell(row, col_n, h), h, bg="6A1B9A")
+                ws.row_dimensions[row].height = 18
+                row += 1
+                for i, g in enumerate(adv_parsed['groups']):
+                    bg = C["grey"] if i % 2 == 0 else "FFFFFF"
+                    c1, c2, c3, c4, c5 = ws.cell(row, 1, g['prefix']), ws.cell(row, 2, g['resource_name']), ws.cell(row, 3, g['group_name']), ws.cell(row, 4, g['group_filters']), ws.cell(row, 5, "\n".join(g['segments']) if g['segments'] else "(sin segmentación interna)")
+                    for c, al in [(c1,'center'),(c2,'left'),(c3,'left'),(c4,'left'),(c5,'left')]: sc(c, bg=bg, size=9, va='top', wrap=True, ha=al)
+                    ws.row_dimensions[row].height = row_height(max(g['group_filters'].count('\n') + 1, len(g['segments']) if g['segments'] else 1))
+                    row += 1
+                row += 1
+                row = section_title(ws, row, "  RULE SETS (SEGMENTO A vs SEGMENTO B)", bg="4A148C", cols=COLS)
+                for col_n, h in enumerate(["POS.", "NOMBRE / TIPO", "REGLAS  (A vs B)", "SEGMENTO LADO A", "SEGMENTO LADO B"], 1): hdr(ws.cell(row, col_n, h), h, bg="4A148C")
+                ws.row_dimensions[row].height = 18
+                row += 1
+                for i, rs in enumerate(adv_parsed['rule_sets']):
+                    bg = C["grey"] if i % 2 == 0 else "FFFFFF"
+                    name_txt = rs['name'] + ("\n[" + rs['cross_type'] + "]" if rs['cross_type'] else "") + ("  ✦ new version" if rs['new_ver'] else "")
+                    seg_a = next((s.replace("Lado A: ", "") for s in rs['sweep'] if s.startswith("Lado A")), "—")
+                    seg_b = next((s.replace("Lado B: ", "") for s in rs['sweep'] if s.startswith("Lado B")), "—")
+                    c1, c2, c3, c4, c5 = ws.cell(row, 1, rs['pos']), ws.cell(row, 2, name_txt), ws.cell(row, 3, "\n".join(rs['rules'])), ws.cell(row, 4, seg_a), ws.cell(row, 5, seg_b)
+                    for c, al in [(c1,'center'),(c2,'left'),(c3,'left'),(c4,'left'),(c5,'left')]: sc(c, bg=bg, size=9, va='top', wrap=True, ha=al)
+                    ws.row_dimensions[row].height = row_height(max(len(rs['rules']), 1))
+                    row += 1
+                row += 1
+
+            # --- SOURCE GROUP ---
+            sg = res.get('source_group')
+            if sg:
+                row = section_title(ws, row, "📊  CONFIGURACIÓN DE AGRUPACIÓN (GROUP BY)", bg=C["amber"], cols=COLS)
+                group_cols, agg_vals = parse_source_group(sg, col_map)
+                row = meta_row(ws, row, "GROUP BY (dimensiones)", " | ".join(group_cols) or "—", cols=COLS, bg_val="FFF3E0")
+                row = meta_row(ws, row, "Agregaciones (métricas)", "  |  ".join(f"{fn}( {col} )" for fn, col in agg_vals) or "—", cols=COLS, bg_val="FFF3E0")
+                row = meta_row(ws, row, "Acumulativo", "Sí" if sg.get('is_accumulative') else "No", cols=COLS)
+                row += 1
+
+            # --- SOURCE UNION ---
+            su = res.get('source_union')
+            if su:
+                row = section_title(ws, row, "🔗  CONFIGURACIÓN DE UNIÓN DE FUENTES", bg=C["teal"], cols=COLS)
+                for us in (su.get('union_segments') or []):
+                    row = meta_row(ws, row, f"Segmento ID {us.get('segment_id', '')}", f"{'TRIGGER' if us.get('is_trigger') else 'No trigger'}  {'· ' + us.get('trigger_type', '') if us.get('trigger_type') else ''}", cols=COLS, bg_val="E0F2F1")
+                row += 1
+
+            # --- GRUPOS CONCILIABLES (SEGMENTOS) ---
+            segs_all = parse_segment_filters(res.get('segments', []), col_map)
+            if segs_all:
+                row = section_title(ws, row, "🔍  GRUPOS CONCILIABLES DEL RECURSO", bg=C["slate"], cols=COLS)
+                for col_n, h in enumerate(["NOMBRE DEL GRUPO", "FILTROS APLICADOS"], 1): hdr(ws.cell(row, col_n, h), h, bg=C["slate"])
+                ws.merge_cells(f'B{row}:E{row}')
+                ws.row_dimensions[row].height = 18
+                row += 1
+                for i, seg in enumerate(segs_all):
+                    bg = C["grey"] if i % 2 == 0 else "FFFFFF"
+                    c1 = ws.cell(row, 1, seg['name'])
+                    ws.merge_cells(f'B{row}:E{row}')
+                    c2 = ws.cell(row, 2, "\n".join(seg['rules']))
+                    for c in [c1, c2]: sc(c, bg=bg, size=9, va='top', wrap=True)
+                    ws.row_dimensions[row].height = row_height(len(seg['rules']))
+                    row += 1
+                row += 1
+
+            # --- COLUMNAS ---
             columns = sorted(res.get('columns') or [], key=lambda x: x.get('position', 0))
             if columns:
                 row = section_title(ws, row, "📋  CONFIGURACIÓN DE COLUMNAS", bg=C["blue"])
@@ -187,7 +458,7 @@ def generar_excel(data: Dict, selected_ids: Set[int]) -> io.BytesIO:
     return output
 
 # ══════════════════════════════════════════════════════════════════════════════
-# STREAMLIT UI 
+# STREAMLIT UI (World-Class Frontend)
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("""
 <div style='background:linear-gradient(135deg,#EA0050 0%,#B0003A 100%); padding:28px 36px;border-radius:16px; box-shadow:0 6px 24px rgba(234,0,80,0.25);margin-bottom:24px'>
